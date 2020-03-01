@@ -51,17 +51,6 @@ typedef struct {
     uint8_t target_mac[6];
     uint32_t target_ip;
 }Session;
-
-typedef struct {
-    pcap_t * handle;
-    pcap_pkthdr * header;
-    const u_char * real_pkt;
-    unsigned char * spoofed_pkt;
-    Session * sess;
-    uint8_t attacker_mac[6];
-    uint32_t attacker_ip;
-}Attack_arg;
-
 #pragma pack(pop)
 
 void usage() {
